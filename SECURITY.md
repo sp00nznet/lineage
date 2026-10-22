@@ -33,5 +33,5 @@ placeholder names (`pve-a`, `pve-b`) and the RFC 5737 range `192.0.2.0/24`.
 
 ## Reporting
 
-This repository is private. Report anything security-relevant to the maintainer
-directly rather than in an issue.
+Report security issues privately through GitHub's "Report a vulnerability"
+(Security tab), not as a public issue.

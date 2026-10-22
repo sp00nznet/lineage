@@ -13,6 +13,8 @@ written as the work lands.
   from real pulled data. Seeded and on fixed dates, so they regenerate the same.
 - README screenshots of every console tab (`docs/screenshots/`).
 - `CONTRIBUTING.md`.
+- The repository is public. Security reports go through GitHub's private
+  vulnerability reporting (SECURITY.md).
 - `lineage.web`: a read-only console over `var/fleet` (coverage timeline with
   gaps, actors, scream test, file search, jobs, links). Stdlib, loopback only.
 - `lineage.collect`: D1–D5 as one read-only cycle (`run`), an idempotent central
