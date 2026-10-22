@@ -1,0 +1,69 @@
+{
+  "version": 2,
+  "comment": "Example policy. Every item is one expression evaluated on the endpoint. 'applicability' answers a yes/no question; 'inventory' collects a value. Same engine, same syntax.",
+  "items": [
+    {
+      "id": "os-build",
+      "kind": "inventory",
+      "relevance": "os_build()"
+    },
+    {
+      "id": "os-name",
+      "kind": "inventory",
+      "relevance": "os_caption()"
+    },
+    {
+      "id": "os-arch",
+      "kind": "inventory",
+      "relevance": "os_arch()"
+    },
+    {
+      "id": "ad-domain",
+      "kind": "inventory",
+      "relevance": "domain()"
+    },
+    {
+      "id": "chrome-version",
+      "kind": "inventory",
+      "relevance": "package_version(\"Google Chrome\")"
+    },
+    {
+      "id": "windows-11-or-later",
+      "kind": "applicability",
+      "relevance": "os_build() >= \"10.0.22000\""
+    },
+    {
+      "id": "chrome-needs-update",
+      "kind": "applicability",
+      "comment": "The canonical shape: installed, and older than the fixed version. Guarded so a missing Chrome is false, not an error.",
+      "relevance": "installed(\"Google Chrome\") and package_version(\"Google Chrome\") < \"139.0\""
+    },
+    {
+      "id": "windows-update-service-running",
+      "kind": "applicability",
+      "relevance": "service_state(\"wuauserv\") in \"running start_pending\""
+    },
+    {
+      "id": "bitlocker-off-on-system-drive",
+      "kind": "applicability",
+      "comment": "Compliance is the same primitive as patch applicability -- that is the entire difference. Note the explicit namespace: Win32_EncryptableVolume is NOT in root/cimv2, and this needs admin. Without both, the item reports an error, which is correct: a check that could not run is not a clean bill of health.",
+      "relevance": "cim_value(\"SELECT ProtectionStatus FROM Win32_EncryptableVolume WHERE DriveLetter='C:'\", \"ProtectionStatus\", \"root/cimv2/Security/MicrosoftVolumeEncryption\") != \"1\""
+    },
+    {
+      "id": "smbv1-enabled",
+      "kind": "applicability",
+      "relevance": "reg_value(\"HKLM\\\\SYSTEM\\\\CurrentControlSet\\\\Services\\\\LanmanServer\\\\Parameters\", \"SMB1\") == 1"
+    },
+    {
+      "id": "update-canary-ring",
+      "kind": "applicability",
+      "comment": "Staged rollout is not a second targeting mechanism -- it is an ordinary relevance expression. Stable per-machine bucket derived from agent_id.",
+      "relevance": "update_ring() < 5"
+    },
+    {
+      "id": "update-ring",
+      "kind": "inventory",
+      "relevance": "update_ring()"
+    }
+  ]
+}

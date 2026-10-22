@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# runtime state -- policy.json is tracked as the worked example, the rest is not
+var/state/
+var/agent-state/
+var/server.pid
+var/fleet/
+var/collect/
+var/demo/
+
+# never committed (REPO_RULES section 2)
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.etl
+setup.log
+Lineage.cmd
+lineage.sh

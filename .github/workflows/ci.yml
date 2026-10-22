@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.9", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      # Test and lint tools only. The package itself is stdlib-only.
+      - run: python -m pip install pytest==8.3.3 pyflakes==3.2.0 croniter==6.0.0
+      - name: lint
+        run: python -m pyflakes lineage tools tests
+      - name: tests
+        run: python -m pytest -q
+      - name: conformance (fails on regression below tests/conformance/baseline.json)
+        run: python tools/conformance.py

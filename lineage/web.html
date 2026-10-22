@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lineage console</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #fff; --ink: #1b1f24; --muted: #5d6673; --line: #dde1e6;
+  --accent: #2463eb; --ok: #1f9d55; --warn: #c27c0e; --bad: #d13b3b; --chip: #eef1f5;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111418; --panel: #191d23; --ink: #e5e8ec; --muted: #98a2ae; --line: #2a3038;
+          --accent: #6b9bff; --ok: #3fbf7a; --warn: #e2a33a; --bad: #f06b6b; --chip: #222831; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, "Segoe UI", sans-serif; }
+header { display: flex; gap: 16px; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--line);
+         background: var(--panel); position: sticky; top: 0; z-index: 2; flex-wrap: wrap; }
+header h1 { font-size: 16px; margin: 0; letter-spacing: .02em; }
+header .sub { color: var(--muted); font-size: 12px; }
+main { max-width: 1240px; margin: 0 auto; padding: 20px 16px 60px; }
+select, input, button { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line);
+                        border-radius: 6px; padding: 5px 9px; }
+button { cursor: pointer; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+.tile .v { font-size: 22px; font-weight: 600; }
+.tile .k { color: var(--muted); font-size: 12px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-bottom: 18px; }
+.panel h2 { font-size: 14px; margin: 0 0 10px; }
+.note { color: var(--muted); font-size: 12px; }
+.tabs { display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap; }
+.tabs button { border-radius: 6px; }
+.tabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tblwrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--panel); cursor: pointer; user-select: none; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+.chip { display: inline-block; padding: 1px 7px; border-radius: 10px; background: var(--chip); font-size: 11px; }
+.chip.read { color: var(--ok); } .chip.write { color: var(--warn); } .chip.both { color: var(--accent); }
+.tier { border-left: 3px solid var(--line); padding: 4px 0 4px 12px; margin: 12px 0; }
+.tier.confirmed { border-color: var(--ok); } .tier.declared { border-color: var(--warn); } .tier.unknown { border-color: var(--muted); }
+.tier h3 { font-size: 13px; margin: 0 0 6px; }
+.caveat { font-weight: 600; padding: 10px 12px; border-radius: 6px; background: var(--chip); margin-top: 12px; }
+svg text { fill: var(--muted); font-size: 10px; }
+.empty { color: var(--muted); padding: 20px 0; text-align: center; }
+details summary { cursor: pointer; }
+</style>
+</head>
+<body>
+<header>
+  <h1>lineage</h1>
+  <select id="host" aria-label="host"></select>
+  <span class="sub" id="stamp"></span>
+  <span style="flex:1"></span>
+  <button id="reload" title="re-read central.db">Reload</button>
+</header>
+<main>
+  <div class="tiles" id="tiles"></div>
+  <section class="panel">
+    <h2>Coverage</h2>
+    <div id="timeline"></div>
+    <div class="note" id="covnote"></div>
+  </section>
+  <section class="panel">
+    <div class="tabs" id="tabs"></div>
+    <div id="view"></div>
+  </section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmtT = t => t ? new Date(t * 1000).toISOString().slice(0, 16).replace("T", " ") + "Z" : "";
+const num = n => (n ?? 0).toLocaleString();
+const dur = s => s < 90 ? `${Math.round(s)}s` : s < 5400 ? `${Math.round(s / 60)}m` : s < 172800 ? `${(s / 3600).toFixed(1)}h` : `${(s / 86400).toFixed(1)}d`;
+const api = p => fetch(p).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(e.error || r.status)));
+
+let OV = null, H = null, tab = location.hash.slice(1) || localGet("tab") || "actors";
+function localGet(k) { try { return localStorage.getItem("lineage." + k); } catch { return null; } }
+function localSet(k, v) { try { localStorage.setItem("lineage." + k, v); } catch {} }
+
+async function load() {
+  try { OV = await api("/api/overview"); }
+  catch (e) { $("#view").innerHTML = `<div class="empty">${esc(e)}</div>`; return; }
+  const sel = $("#host"), keep = sel.value || localGet("host");
+  sel.innerHTML = OV.hosts.map(h => `<option>${esc(h.host)}</option>`).join("");
+  if (OV.hosts.some(h => h.host === keep)) sel.value = keep;
+  await loadHost();
+}
+
+async function loadHost() {
+  const host = $("#host").value; if (!host) return;
+  localSet("host", host);
+  H = await api("/api/host/" + encodeURIComponent(host));
+  const o = OV.hosts.find(h => h.host === host) || {};
+  $("#stamp").textContent = `last window ended ${fmtT(o.last)}  ·  ${dur(Date.now() / 1000 - o.last)} ago`;
+  const tiles = [
+    [o.watched || "–", `watched of ${o.span || "–"}`], [num(o.windows), `${esc(o.tap || "")} windows`],
+    [num(H.gaps.length), "gaps > 2 min"], [num(o.observations), "observations"],
+    [num(o.actors), "actors"], [num(o.artifacts), "artifacts"],
+    [num(OV.cross_host_links), `cross-host links (of ${num(OV.links)})`],
+  ];
+  $("#tiles").innerHTML = tiles.map(([v, k]) => `<div class="tile"><div class="v">${v}</div><div class="k">${k}</div></div>`).join("");
+  timeline();
+  tabs();
+}
+
+function timeline() {
+  const W = H.windows; if (!W.length) { $("#timeline").innerHTML = '<div class="empty">no windows yet</div>'; return; }
+  const a = W[0].started, b = W[W.length - 1].ended, span = Math.max(b - a, 1), w = 1000, h = 34;
+  const x = t => ((t - a) / span) * w;
+  let s = `<svg viewBox="0 0 ${w} ${h + 14}" width="100%" preserveAspectRatio="none" role="img" aria-label="observation windows">`;
+  s += `<rect x="0" y="0" width="${w}" height="${h}" fill="var(--bad)" opacity=".25"><title>not watched</title></rect>`;
+  for (const v of W) s += `<rect x="${x(v.started)}" y="0" width="${Math.max(x(v.ended) - x(v.started), .5)}" height="${h}" fill="var(--ok)"><title>${fmtT(v.started)} → ${fmtT(v.ended)} (${dur(v.ended - v.started)})</title></rect>`;
+  const step = span > 4 * 86400 ? 86400 : span > 86400 ? 21600 : 3600;
+  for (let t = Math.ceil(a / step) * step; t < b; t += step) {
+    s += `<line x1="${x(t)}" x2="${x(t)}" y1="${h}" y2="${h + 4}" stroke="var(--muted)"/>`;
+    s += `<text x="${x(t) + 2}" y="${h + 13}">${new Date(t * 1000).toISOString().slice(step >= 86400 ? 5 : 11, step >= 86400 ? 10 : 16)}</text>`;
+  }
+  $("#timeline").innerHTML = s + "</svg>";
+  const g = H.gaps.slice(-5).map(g => `${fmtT(g.from)} for ${dur(g.seconds)}`).join("; ");
+  $("#covnote").textContent = `${fmtT(a)} → ${fmtT(b)}. Green is watched, red is not. ` + (H.gaps.length ? `Gaps: ${g}.` : "No gaps over two minutes.");
+}
+
+const TABS = { actors: "Actors", scream: "Scream test", files: "Files", jobs: "Scheduled jobs", links: "Links" };
+function tabs() {
+  $("#tabs").innerHTML = Object.entries(TABS).map(([k, v]) => `<button data-t="${k}" class="${k === tab ? "on" : ""}">${v}</button>`).join("");
+  $("#tabs").onclick = e => { const t = e.target.dataset.t; if (t) { tab = t; localSet("tab", t); history.replaceState(null, "", "#" + t); tabs(); } };
+  (({ actors, scream, files, jobs, links })[tab] || actors)();
+}
+
+function table(cols, rows, empty = "nothing here yet") {
+  if (!rows.length) return `<div class="empty">${empty}</div>`;
+  const id = "t" + Math.random().toString(36).slice(2);
+  setTimeout(() => sortable(document.getElementById(id), cols, rows), 0);
+  return `<div class="tblwrap"><table id="${id}"></table></div>`;
+}
+function sortable(el, cols, rows) {
+  let key = null, dir = -1;
+  const draw = () => {
+    const r = key == null ? rows : [...rows].sort((p, q) => { const a = cols[key].v(p), b = cols[key].v(q); return (a > b ? 1 : a < b ? -1 : 0) * dir; });
+    el.innerHTML = `<thead><tr>${cols.map((c, i) => `<th class="${c.n ? "n" : ""}" data-i="${i}">${c.h}${i === key ? (dir > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead>` +
+      `<tbody>${r.map(x => `<tr>${cols.map(c => `<td class="${c.n ? "n" : ""} ${c.cls || ""}">${c.f ? c.f(x) : esc(c.v(x))}</td>`).join("")}</tr>`).join("")}</tbody>`;
+  };
+  el.onclick = e => { const i = e.target.dataset.i; if (i == null) return; dir = key == +i ? -dir : -1; key = +i; draw(); };
+  draw();
+}
+
+function actors() {
+  const dup = {}; for (const a of H.actors) dup[a.name] = (dup[a.name] || 0) + 1;
+  $("#view").innerHTML = table([
+    { h: "actor", v: a => a.name, f: a => esc(a.name) + (dup[a.name] > 1 && a.actor !== a.name ? `<div class="note mono">${esc(a.actor)}</div>` : "") },
+    { h: "observations", n: 1, v: a => a.observations, f: a => num(a.observations) },
+    { h: "writes", n: 1, v: a => a.writes, f: a => num(a.writes) },
+    { h: "reads", n: 1, v: a => a.reads, f: a => num(a.reads) },
+    { h: "artifacts", n: 1, v: a => a.artifacts },
+    { h: "first seen", v: a => a.first_seen, f: a => fmtT(a.first_seen) },
+    { h: "last seen", v: a => a.last_seen, f: a => fmtT(a.last_seen) },
+  ], H.actors) + `<p class="note">Actors shown as <span class="mono">pid:N</span> exited before they could be named.</p>`;
+}
+
+function scream() {
+  const S = H.scream, c = S.consumers;
+  $("#view").innerHTML = `<p class="note">What would notice if <b>${esc(S.target.host)}</b> went away. Three tiers, never merged, and no verdict.</p>
+    <div class="tier confirmed"><h3>Confirmed: observed dependents (${c.length})</h3>${table([
+      { h: "consumer", v: x => x.actor, f: x => esc(x.actor.split(/[\\/]/).pop()) },
+      { h: "host", v: x => x.host }, { h: "artifacts", n: 1, v: x => x.artifact_count },
+      { h: "examples", v: x => x.artifacts.join(" "), f: x => `<span class="mono">${x.artifacts.slice(0, 3).map(esc).join("<br>")}</span>` },
+      { h: "last seen", v: x => x.last_seen, f: x => fmtT(x.last_seen) }], c, "none observed")}</div>
+    <div class="tier declared"><h3>Declared: scheduled, not seen in window (${S.declared_not_observed.length})</h3>${table([
+      { h: "job", v: j => j.id, cls: "mono" }, { h: "frequency", v: j => j.frequency || "" },
+      { h: "why", v: j => j.why }], S.declared_not_observed)}</div>
+    <div class="tier unknown"><h3>Unknown</h3><p class="note">${num(S.unknown_jobs)} job(s) that cannot be attributed to any host.</p></div>
+    <div class="caveat">${esc(S.coverage_note)}</div>`;
+}
+
+let fileQ = "";
+async function files() {
+  $("#view").innerHTML = `<input id="q" placeholder="filter actor or path" value="${esc(fileQ)}" style="width:100%;max-width:420px;margin-bottom:10px"><div id="fres"></div>`;
+  let t; $("#q").oninput = e => { clearTimeout(t); t = setTimeout(() => { fileQ = e.target.value; run(); }, 250); };
+  const run = async () => {
+    const rows = await api(`/api/edges?host=${encodeURIComponent(H.host)}&q=${encodeURIComponent(fileQ)}&limit=1000`);
+    $("#fres").innerHTML = table([
+      { h: "actor", v: r => r.name, f: r => `<span title="${esc(r.actor)}">${esc(r.name)}</span>` },
+      { h: "", v: r => r.direction, f: r => `<span class="chip ${r.direction}">${r.direction}</span>` },
+      { h: "artifact", v: r => r.volume + r.rel, f: r => `<details><summary class="mono">${esc(r.rel)}</summary><div class="mono note">${esc(r.volume)}<br>${r.examples.map(esc).join("<br>")}</div></details>` },
+      { h: "count", n: 1, v: r => r.count, f: r => num(r.count) },
+      { h: "last seen", v: r => r.last_seen, f: r => fmtT(r.last_seen) },
+    ], rows, "no matching edges") + (rows.length >= 1000 ? `<p class="note">First 1,000 by recency. Narrow the filter.</p>` : "");
+  };
+  run();
+}
+
+function jobs() {
+  $("#view").innerHTML = table([
+    { h: "job", v: j => j.id, cls: "mono" }, { h: "kind", v: j => j.kind || "" },
+    { h: "frequency", v: j => j.frequency || "" },
+    { h: "max gap (days)", n: 1, v: j => j.max_gap_days ?? -1, f: j => j.max_gap_days ?? "?" },
+    { h: "enabled", v: j => j.enabled ? "yes" : "no" },
+    { h: "command", v: j => j.command || "", cls: "mono" },
+  ], H.jobs, "no snapshot pulled for this host") + `<p class="note">From the latest daily snapshot.</p>`;
+}
+
+async function links() {
+  const L = await api("/api/links");
+  $("#view").innerHTML = table([
+    { h: "producer", v: l => l.producer.actor, f: l => `${esc(l.producer.actor.split(/[\\/]/).pop())}<div class="note">${esc(l.producer.host)}</div>` },
+    { h: "artifact", v: l => l.artifact, cls: "mono" },
+    { h: "consumer", v: l => l.consumer.actor, f: l => `${esc(l.consumer.actor.split(/[\\/]/).pop())}<div class="note">${esc(l.consumer.host)}</div>` },
+    { h: "cross-host", v: l => l.cross_host ? 1 : 0, f: l => l.cross_host ? '<span class="chip both">yes</span>' : "" },
+    { h: "observations", n: 1, v: l => l.observations },
+  ], L, "no links yet") + `<p class="note">A link is one actor writing what another reads. Cross-host links need a second collecting host.</p>`;
+}
+
+$("#host").onchange = loadHost;
+$("#reload").onclick = load;
+load();
+</script>
+</body>
+</html>

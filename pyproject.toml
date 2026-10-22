@@ -1,0 +1,23 @@
+[project]
+name = "lineage"
+version = "0.1.0"
+description = "Read-only dependency discovery and endpoint-evaluated policy for Windows and Linux fleets"
+requires-python = ">=3.9"
+dependencies = []          # stdlib only, deliberately -- see README
+
+[project.scripts]
+lineage-agent = "lineage.agent:main"
+lineage-server = "lineage.server:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["lineage*"]
+
+[tool.setuptools.package-data]
+lineage = ["web.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,72 @@
+# Cron conformance corpus: one expression per line, as found in real crontabs,
+# vendor packages and distro defaults, plus the shapes cron gets wrong most
+# often. lineage's cron_max_gap_days() is scored against croniter (MIT), run as
+# a black-box oracle in CI only -- it is never a runtime dependency.
+#
+# Never edit a line to make it pass. Add lines; the baseline only goes up.
+
+# --- distro and package defaults
+17 * * * *
+25 6 * * *
+47 6 * * 7
+52 6 1 * *
+0 0 * * *
+0 3 * * 0
+30 3 * * *
+*/5 * * * *
+*/10 * * * *
+*/15 * * * *
+*/30 * * * *
+0 */2 * * *
+0 */4 * * *
+0 */6 * * *
+0 */12 * * *
+5 0 * * *
+9,39 * * * *
+@hourly
+@daily
+@weekly
+@monthly
+@yearly
+@annually
+@midnight
+
+# --- business schedules
+0 2 * * 1-5
+30 1 * * 6
+0 23 * * 5
+15 2 1 * *
+0 4 15 * *
+0 1 1,15 * *
+0 6 28-31 * *
+0 0 1 1,4,7,10 *
+0 0 1 */3 *
+0 3 1 1 *
+0 5 31 12 *
+0 0 29 2 *
+0 9 * * mon
+0 9 * * MON-FRI
+0 18 * * sun
+0 0 * jan *
+0 0 1 jan,jul *
+0 12 * * 1,3,5
+30 8 * * 2-4
+
+# --- the OR quirk: day-of-month AND day-of-week both restricted
+0 0 1 * 1
+0 0 13 * 5
+0 0 1-7 * 1
+0 3 15 * 0
+0 0 */10 * 6
+
+# --- steps, ranges and lists mixed
+0 0 */2 * *
+0 0 1-31/7 * *
+0 0 * * */2
+0 0 * * 0-6/3
+0 8-18/2 * * 1-5
+0 0,12 * * *
+30 0 * * 1-5
+0 22 * * 0,6
+0 0 1,10,20 * *
+0 0 5-10 * *
